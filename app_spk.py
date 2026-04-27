@@ -1,5 +1,5 @@
 # =========================================
-# MODERN STREAMLIT UI - HEALTHCARE GREEN THEME
+# SPK PRIORITAS PASIEN - CLEAN PIPELINE
 # =========================================
 
 import streamlit as st
@@ -8,15 +8,17 @@ import numpy as np
 
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
 from imblearn.over_sampling import SMOTE
 
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 # =========================================
-# PAGE CONFIG
+# CONFIG
 # =========================================
 st.set_page_config(
     page_title="SPK Prioritas Pasien",
@@ -25,57 +27,38 @@ st.set_page_config(
 )
 
 # =========================================
-# CUSTOM CSS (MODERN HEALTH UI)
+# STYLE (MEDICAL UI)
 # =========================================
 st.markdown("""
 <style>
-body {
-    background-color: #f4fbf7;
-}
+body { background-color: #f6fbf9; }
+.block-container { padding: 1.5rem 2rem; }
 
-.main {
-    background: linear-gradient(135deg, #e8f5e9, #ffffff);
-}
-
-.block-container {
-    padding: 2rem 2rem 2rem 2rem;
-}
-
-h1, h2, h3 {
-    color: #1b5e20;
-}
-
-.stMetric {
-    background-color: #e8f5e9;
-    border-radius: 12px;
-    padding: 10px;
-}
-
-.stButton>button {
-    background-color: #2e7d32;
+.header {
+    background: linear-gradient(135deg, #2e7d32, #66bb6a);
     color: white;
-    border-radius: 10px;
-    height: 45px;
-    width: 100%;
-    font-size: 16px;
-}
-
-.stButton>button:hover {
-    background-color: #1b5e20;
-}
-
-.css-1d391kg {
-    background-color: #f1f8f4;
+    padding: 25px;
+    border-radius: 16px;
 }
 
 .card {
+    background: white;
     padding: 20px;
-    border-radius: 15px;
-    background-color: white;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    border-radius: 16px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
     margin-bottom: 20px;
 }
 
+.badge-high { background:#ffebee; color:#c62828; padding:15px; border-radius:10px; }
+.badge-med { background:#fff8e1; color:#f9a825; padding:15px; border-radius:10px; }
+.badge-low { background:#e8f5e9; color:#2e7d32; padding:15px; border-radius:10px; }
+
+.stButton>button {
+    background:#2e7d32;
+    color:white;
+    border-radius:10px;
+    height:45px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -83,7 +66,7 @@ h1, h2, h3 {
 # DATA GENERATION
 # =========================================
 @st.cache_data
-def generate_data():
+def load_data():
     np.random.seed(42)
     n = 500
 
@@ -96,7 +79,7 @@ def generate_data():
         "kondisi_medis": np.random.choice(["ringan","sedang","berat"], n)
     })
 
-    def rule_priority(r):
+    def label_rule(r):
         score = 0
         if r.umur > 60: score += 2
         if r.tekanan_darah > 140: score += 2
@@ -105,18 +88,17 @@ def generate_data():
         if r.riwayat_penyakit == 1: score += 1
         if r.kondisi_medis == "berat": score += 3
 
-        if score >= 7: return 1
-        elif score >= 4: return 2
-        else: return 3
+        return 1 if score >= 7 else 2 if score >= 4 else 3
 
-    df["prioritas"] = df.apply(rule_priority, axis=1)
+    df["prioritas"] = df.apply(label_rule, axis=1)
     return df
 
 # =========================================
-# TRAIN MODEL
+# MODEL PIPELINE
 # =========================================
 @st.cache_resource
-def train_pipeline(df):
+def build_model(df):
+
     X = df.drop("prioritas", axis=1)
     y = df["prioritas"]
 
@@ -125,122 +107,169 @@ def train_pipeline(df):
 
     preprocessor = ColumnTransformer([
         ("num", StandardScaler(), num_cols),
-        ("cat", OneHotEncoder(handle_unknown='ignore'), cat_cols)
-    ])
-
-    model = Pipeline([
-        ("prep", preprocessor),
-        ("clf", DecisionTreeClassifier(max_depth=5, random_state=42))
+        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols)
     ])
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, stratify=y, random_state=42
+        X, y, stratify=y, test_size=0.2, random_state=42
     )
 
-    model.fit(X_train, y_train)
+    # transform
+    X_train_tr = preprocessor.fit_transform(X_train)
+    X_test_tr = preprocessor.transform(X_test)
 
-    X_train_tr = model.named_steps['prep'].transform(X_train)
-
+    # imbalance handling
     smote = SMOTE(random_state=42)
     X_res, y_res = smote.fit_resample(X_train_tr, y_train)
 
-    model.named_steps['clf'].fit(X_res, y_res)
+    # model
+    model = DecisionTreeClassifier(max_depth=5, random_state=42)
+    model.fit(X_res, y_res)
 
-    y_pred = model.predict(X_test)
+    y_pred = model.predict(X_test_tr)
     acc = accuracy_score(y_test, y_pred)
 
-    return model, acc
+    return {
+        "preprocessor": preprocessor,
+        "model": model,
+        "X_test": X_test,
+        "y_test": y_test,
+        "y_pred": y_pred,
+        "accuracy": acc,
+        "num_cols": num_cols,
+        "cat_cols": cat_cols
+    }
 
 # =========================================
-# LOAD
+# LOAD SYSTEM
 # =========================================
-df = generate_data()
-model, acc = train_pipeline(df)
+df = load_data()
+artifacts = build_model(df)
 
 # =========================================
 # HEADER
 # =========================================
-st.markdown('<div class="card">', unsafe_allow_html=True)
-st.title("🏥 Sistem Pendukung Keputusan Prioritas Pasien")
-st.caption("Pipeline + SMOTE + Decision Tree")
-st.markdown('</div>', unsafe_allow_html=True)
+st.markdown("""
+<div class="header">
+<h1>🏥 Sistem Pendukung Keputusan Prioritas Pasien</h1>
+<p>Decision Support System berbasis Machine Learning</p>
+</div>
+""", unsafe_allow_html=True)
 
 # =========================================
 # METRICS
 # =========================================
-col1, col2, col3 = st.columns(3)
-col1.metric("Akurasi Model", f"{acc:.2f}")
-col2.metric("Jumlah Data", len(df))
-col3.metric("Fitur", df.shape[1]-1)
+c1, c2, c3 = st.columns(3)
+c1.metric("Akurasi", f"{artifacts['accuracy']:.2f}")
+c2.metric("Data", len(df))
+c3.metric("Fitur", df.shape[1]-1)
 
 # =========================================
-# INPUT FORM (MODERN)
+# INPUT VALIDATION FUNCTION
+# =========================================
+def validate_input(umur, tekanan, detak):
+    if tekanan < 70 or tekanan > 220:
+        return False, "Tekanan darah tidak valid"
+    if detak < 40 or detak > 180:
+        return False, "Detak jantung tidak valid"
+    return True, ""
+
+# =========================================
+# INPUT FORM
 # =========================================
 st.markdown('<div class="card">', unsafe_allow_html=True)
-st.subheader("🧾 Input Data Pasien")
+st.subheader("Input Data Pasien")
 
 c1, c2, c3 = st.columns(3)
 
 with c1:
     umur = st.slider("Umur", 1, 100, 50)
-    tekanan = st.slider("Tekanan Darah", 80, 200, 120)
 
 with c2:
+    tekanan = st.slider("Tekanan Darah", 80, 200, 120)
     detak = st.slider("Detak Jantung", 60, 150, 90)
-    darurat = st.selectbox("Tingkat Darurat", [1,2,3])
 
 with c3:
+    darurat = st.selectbox("Tingkat Darurat", [1,2,3])
     riwayat = st.selectbox("Riwayat Penyakit", [0,1])
     kondisi = st.selectbox("Kondisi Medis", ["ringan","sedang","berat"])
 
-predict_btn = st.button("🔍 Prediksi Sekarang")
+predict = st.button("Analisis")
 
 st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================
-# PREDICTION RESULT
+# PREDICTION
 # =========================================
-if predict_btn:
-    input_df = pd.DataFrame([{
-        "umur": umur,
-        "tekanan_darah": tekanan,
-        "detak_jantung": detak,
-        "tingkat_darurat": darurat,
-        "riwayat_penyakit": riwayat,
-        "kondisi_medis": kondisi
-    }])
+if predict:
 
-    pred = model.predict(input_df)[0]
+    valid, msg = validate_input(umur, tekanan, detak)
 
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("📌 Hasil Prediksi")
-
-    if pred == 1:
-        st.error("🔴 Prioritas Tinggi (Segera ditangani)")
-    elif pred == 2:
-        st.warning("🟡 Prioritas Sedang")
+    if not valid:
+        st.error(msg)
     else:
-        st.success("🟢 Prioritas Rendah")
+        input_df = pd.DataFrame([{
+            "umur": umur,
+            "tekanan_darah": tekanan,
+            "detak_jantung": detak,
+            "tingkat_darurat": darurat,
+            "riwayat_penyakit": riwayat,
+            "kondisi_medis": kondisi
+        }])
 
-    st.markdown('</div>', unsafe_allow_html=True)
+        X_tr = artifacts["preprocessor"].transform(input_df)
+        pred = artifacts["model"].predict(X_tr)[0]
+
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.subheader("Hasil Prioritas")
+
+        if pred == 1:
+            st.markdown('<div class="badge-high">PRIORITAS TINGGI - SEGERA</div>', unsafe_allow_html=True)
+        elif pred == 2:
+            st.markdown('<div class="badge-med">PRIORITAS SEDANG</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="badge-low">PRIORITAS RENDAH</div>', unsafe_allow_html=True)
+
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================
-# RANKING
+# TABS ANALISIS
 # =========================================
-st.markdown('<div class="card">', unsafe_allow_html=True)
-st.subheader("🏆 Ranking Pasien")
+tab1, tab2, tab3 = st.tabs(["Evaluasi", "Feature Importance", "Dataset"])
 
-df_pred = df.copy()
-df_pred["prediksi"] = model.predict(df.drop("prioritas", axis=1))
-ranking = df_pred.sort_values(by="prediksi")
+with tab1:
+    st.subheader("Confusion Matrix")
+    cm = confusion_matrix(artifacts["y_test"], artifacts["y_pred"])
+    fig, ax = plt.subplots()
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Greens", ax=ax)
+    st.pyplot(fig)
 
-st.dataframe(ranking.head(10), use_container_width=True)
-st.markdown('</div>', unsafe_allow_html=True)
+    st.subheader("Classification Report")
+    report = classification_report(
+        artifacts["y_test"],
+        artifacts["y_pred"],
+        output_dict=True
+    )
+    st.dataframe(pd.DataFrame(report).transpose())
 
-# =========================================
-# DATA SAMPLE
-# =========================================
-st.markdown('<div class="card">', unsafe_allow_html=True)
-st.subheader("📊 Dataset Pasien")
-st.dataframe(df.head(20), use_container_width=True)
-st.markdown('</div>', unsafe_allow_html=True)
+with tab2:
+    ohe = artifacts["preprocessor"].named_transformers_["cat"]
+    encoded = ohe.get_feature_names_out(artifacts["cat_cols"])
+    features = artifacts["num_cols"] + list(encoded)
+
+    imp = artifacts["model"].feature_importances_
+
+    df_imp = pd.DataFrame({
+        "feature": features,
+        "importance": imp
+    }).sort_values(by="importance", ascending=False)
+
+    st.dataframe(df_imp)
+
+    fig2, ax2 = plt.subplots()
+    ax2.barh(df_imp["feature"], df_imp["importance"])
+    ax2.invert_yaxis()
+    st.pyplot(fig2)
+
+with tab3:
+    st.dataframe(df.head(20))
