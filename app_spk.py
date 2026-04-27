@@ -108,7 +108,7 @@ model, acc, X_test, y_test = train_pipeline(df)
 # =========================================
 # 5. UI
 # =========================================
-st.title("🏥 SPK Prioritas Pasien (Pipeline ML Ready)")
+st.title("🏥 SPK Prioritas Pasien")
 st.write("Model: Decision Tree + Pipeline + OneHotEncoder (Anti Error)")
 
 st.metric("Akurasi Model", f"{acc:.2f}")
