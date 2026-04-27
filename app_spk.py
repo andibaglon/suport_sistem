@@ -1,6 +1,7 @@
 # =========================================
-# 1. IMPORT
+# MODERN STREAMLIT UI - HEALTHCARE GREEN THEME
 # =========================================
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -15,7 +16,71 @@ from sklearn.metrics import accuracy_score
 from imblearn.over_sampling import SMOTE
 
 # =========================================
-# 2. GENERATE DATASET (REALISTIS RS)
+# PAGE CONFIG
+# =========================================
+st.set_page_config(
+    page_title="SPK Prioritas Pasien",
+    layout="wide",
+    page_icon="🏥"
+)
+
+# =========================================
+# CUSTOM CSS (MODERN HEALTH UI)
+# =========================================
+st.markdown("""
+<style>
+body {
+    background-color: #f4fbf7;
+}
+
+.main {
+    background: linear-gradient(135deg, #e8f5e9, #ffffff);
+}
+
+.block-container {
+    padding: 2rem 2rem 2rem 2rem;
+}
+
+h1, h2, h3 {
+    color: #1b5e20;
+}
+
+.stMetric {
+    background-color: #e8f5e9;
+    border-radius: 12px;
+    padding: 10px;
+}
+
+.stButton>button {
+    background-color: #2e7d32;
+    color: white;
+    border-radius: 10px;
+    height: 45px;
+    width: 100%;
+    font-size: 16px;
+}
+
+.stButton>button:hover {
+    background-color: #1b5e20;
+}
+
+.css-1d391kg {
+    background-color: #f1f8f4;
+}
+
+.card {
+    padding: 20px;
+    border-radius: 15px;
+    background-color: white;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    margin-bottom: 20px;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+# =========================================
+# DATA GENERATION
 # =========================================
 @st.cache_data
 def generate_data():
@@ -47,88 +112,95 @@ def generate_data():
     df["prioritas"] = df.apply(rule_priority, axis=1)
     return df
 
-
 # =========================================
-# 3. TRAIN PIPELINE (ANTI ERROR)
+# TRAIN MODEL
 # =========================================
 @st.cache_resource
 def train_pipeline(df):
     X = df.drop("prioritas", axis=1)
     y = df["prioritas"]
 
-    # Pisahkan kolom
     num_cols = ["umur", "tekanan_darah", "detak_jantung"]
     cat_cols = ["tingkat_darurat", "riwayat_penyakit", "kondisi_medis"]
 
-    # Preprocessing aman
     preprocessor = ColumnTransformer([
         ("num", StandardScaler(), num_cols),
         ("cat", OneHotEncoder(handle_unknown='ignore'), cat_cols)
     ])
 
-    # Model pipeline
     model = Pipeline([
         ("prep", preprocessor),
         ("clf", DecisionTreeClassifier(max_depth=5, random_state=42))
     ])
 
-    # Split
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, stratify=y, random_state=42
     )
 
-    # Fit awal
     model.fit(X_train, y_train)
 
-    # ======================
-    # OPTIONAL: SMOTE
-    # ======================
-    # NOTE: SMOTE harus setelah transform → manual
     X_train_tr = model.named_steps['prep'].transform(X_train)
 
     smote = SMOTE(random_state=42)
     X_res, y_res = smote.fit_resample(X_train_tr, y_train)
 
-    # Train ulang classifier
     model.named_steps['clf'].fit(X_res, y_res)
 
-    # Evaluasi
     y_pred = model.predict(X_test)
     acc = accuracy_score(y_test, y_pred)
 
-    return model, acc, X_test, y_test
-
+    return model, acc
 
 # =========================================
-# 4. LOAD
+# LOAD
 # =========================================
 df = generate_data()
-model, acc, X_test, y_test = train_pipeline(df)
+model, acc = train_pipeline(df)
 
 # =========================================
-# 5. UI
+# HEADER
 # =========================================
-st.title("🏥 SPK Prioritas Pasien")
-st.write("Model: Decision Tree + Pipeline + OneHotEncoder (Anti Error)")
+st.markdown('<div class="card">', unsafe_allow_html=True)
+st.title("🏥 Sistem Pendukung Keputusan Prioritas Pasien")
+st.caption("Pipeline + SMOTE + Decision Tree")
+st.markdown('</div>', unsafe_allow_html=True)
 
-st.metric("Akurasi Model", f"{acc:.2f}")
+# =========================================
+# METRICS
+# =========================================
+col1, col2, col3 = st.columns(3)
+col1.metric("Akurasi Model", f"{acc:.2f}")
+col2.metric("Jumlah Data", len(df))
+col3.metric("Fitur", df.shape[1]-1)
 
-# ======================
-# INPUT USER
-# ======================
-st.sidebar.header("Input Pasien")
+# =========================================
+# INPUT FORM (MODERN)
+# =========================================
+st.markdown('<div class="card">', unsafe_allow_html=True)
+st.subheader("🧾 Input Data Pasien")
 
-umur = st.sidebar.slider("Umur", 1, 100, 50)
-tekanan = st.sidebar.slider("Tekanan Darah", 80, 200, 120)
-detak = st.sidebar.slider("Detak Jantung", 60, 150, 90)
-darurat = st.sidebar.selectbox("Tingkat Darurat", [1,2,3])
-riwayat = st.sidebar.selectbox("Riwayat Penyakit", [0,1])
-kondisi = st.sidebar.selectbox("Kondisi Medis", ["ringan","sedang","berat"])
+c1, c2, c3 = st.columns(3)
 
-# ======================
-# PREDIKSI
-# ======================
-if st.sidebar.button("Prediksi"):
+with c1:
+    umur = st.slider("Umur", 1, 100, 50)
+    tekanan = st.slider("Tekanan Darah", 80, 200, 120)
+
+with c2:
+    detak = st.slider("Detak Jantung", 60, 150, 90)
+    darurat = st.selectbox("Tingkat Darurat", [1,2,3])
+
+with c3:
+    riwayat = st.selectbox("Riwayat Penyakit", [0,1])
+    kondisi = st.selectbox("Kondisi Medis", ["ringan","sedang","berat"])
+
+predict_btn = st.button("🔍 Prediksi Sekarang")
+
+st.markdown('</div>', unsafe_allow_html=True)
+
+# =========================================
+# PREDICTION RESULT
+# =========================================
+if predict_btn:
     input_df = pd.DataFrame([{
         "umur": umur,
         "tekanan_darah": tekanan,
@@ -140,26 +212,35 @@ if st.sidebar.button("Prediksi"):
 
     pred = model.predict(input_df)[0]
 
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.subheader("📌 Hasil Prediksi")
+
     if pred == 1:
-        st.error("🔴 Prioritas Tinggi")
+        st.error("🔴 Prioritas Tinggi (Segera ditangani)")
     elif pred == 2:
         st.warning("🟡 Prioritas Sedang")
     else:
         st.success("🟢 Prioritas Rendah")
 
-# ======================
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# =========================================
 # RANKING
-# ======================
+# =========================================
+st.markdown('<div class="card">', unsafe_allow_html=True)
+st.subheader("🏆 Ranking Pasien")
+
 df_pred = df.copy()
 df_pred["prediksi"] = model.predict(df.drop("prioritas", axis=1))
-
 ranking = df_pred.sort_values(by="prediksi")
 
-st.subheader("🏆 Ranking Pasien")
-st.dataframe(ranking.head(10))
+st.dataframe(ranking.head(10), use_container_width=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
-# ======================
-# DATA
-# ======================
-st.subheader("📊 Sample Data")
-st.dataframe(df.head(20))
+# =========================================
+# DATA SAMPLE
+# =========================================
+st.markdown('<div class="card">', unsafe_allow_html=True)
+st.subheader("📊 Dataset Pasien")
+st.dataframe(df.head(20), use_container_width=True)
+st.markdown('</div>', unsafe_allow_html=True)
